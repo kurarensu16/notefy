@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0F766E" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="Instant, zero-login online notepad synced in real time across devices — share anywhere with a 4-character access code, custom link, or QR code."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Notefy" />
+    <meta property="og:title" content="Notefy — Instant Notes. Share with a Code." />
+    <meta
+      property="og:description"
+      content="Write immediately with no account needed. Sync live across devices or share via 4-character code, QR card, or read-only Presenter Mode."
+    />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Notefy — Instant Notes. Share with a Code." />
+    <meta
+      name="twitter:description"
+      content="Instant, zero-login online notepad synced in real time across devices via 4-character code, custom link, or QR code."
+    />
+    <title>Notefy — Instant Notes. Share with a Code.</title>
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem("notefy:theme");
+          const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const dark = saved === "dark" || (!saved && prefersDark) || (saved === "system" && prefersDark);
+          if (dark) document.documentElement.classList.add("dark");
+        } catch {}
+      })();
+    </script>
+  </head>
+  <body class="antialiased selection:bg-teal-500/20">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
