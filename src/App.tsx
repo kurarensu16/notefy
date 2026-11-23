@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { NotefyUiProvider } from "./lib/uiContext";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { OfflineSyncManager } from "./components/OfflineSyncManager";
 import { ToastContainer } from "./components/ToastContainer";
 import { NoteSkeleton, RouteProgressBar } from "./components/ui/LoadingStates";
 import { LandingPage } from "./pages/LandingPage";
@@ -24,6 +25,7 @@ export function App() {
     <ErrorBoundary>
       <NotefyUiProvider>
         <BrowserRouter>
+          <OfflineSyncManager />
           <RouteProgressBar />
           <Suspense fallback={<NoteSkeleton withSidebar={false} />}>
             <Routes>

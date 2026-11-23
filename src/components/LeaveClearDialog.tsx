@@ -29,8 +29,11 @@ export function LeaveClearDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogBackdrop className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] transition-opacity duration-200 data-starting-style:opacity-0 data-ending-style:opacity-0" />
-      <DialogContent className="fixed top-1/2 left-1/2 z-[60] m-0 w-[min(92vw,28rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-3xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-0 text-[var(--text-primary)] shadow-2xl transition-all duration-200 data-starting-style:scale-96 data-starting-style:opacity-0 data-ending-style:scale-96 data-ending-style:opacity-0">
-        <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-3">
+      <DialogContent className="fixed inset-x-0 bottom-0 top-auto left-0 z-[60] m-0 w-full overflow-hidden rounded-t-3xl rounded-b-none border-t border-[var(--border-subtle)] bg-[var(--bg-surface)] p-0 text-[var(--text-primary)] shadow-2xl transition-all duration-200 data-starting-style:translate-y-6 data-starting-style:opacity-0 data-ending-style:translate-y-6 data-ending-style:opacity-0 sm:inset-x-auto sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:w-[min(92vw,28rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl sm:border sm:data-starting-style:translate-y-0 sm:data-starting-style:scale-96 sm:data-ending-style:translate-y-0 sm:data-ending-style:scale-96">
+        <div className="flex justify-center pt-2.5 pb-0.5 sm:hidden" aria-hidden="true">
+          <span className="h-1 w-10 rounded-full bg-[var(--border-strong)]/80" />
+        </div>
+        <div className="flex items-start justify-between gap-3 px-5 pt-3.5 pb-3 sm:px-6 sm:pt-5">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-soft)] text-[var(--accent-primary)]">
               <Broom size={20} weight="duotone" />
@@ -53,7 +56,7 @@ export function LeaveClearDialog({
           </DialogClose>
         </div>
 
-        <div className="space-y-2.5 px-6 pt-2 pb-6">
+        <div className="space-y-2.5 px-5 pt-2 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-6">
           {/* Option 1: Safe leave & clear browser only */}
           <button
             type="button"

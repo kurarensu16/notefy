@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@ui-sdk/react/popover";
 import {
   Check,
+  CloudSlash,
   Copy,
   DeviceMobile,
   Eye,
@@ -24,6 +25,8 @@ interface HeaderProps {
   room: NotefyRoom;
   presence: PresenceMember[];
   canEdit: boolean;
+  isOffline?: boolean;
+  isDraft?: boolean;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
   onUpdateTitle: (title: string) => void;
@@ -35,6 +38,8 @@ export function Header({
   room,
   presence,
   canEdit,
+  isOffline = false,
+  isDraft = false,
   sidebarOpen,
   onToggleSidebar,
   onUpdateTitle,
@@ -81,17 +86,16 @@ export function Header({
 
   return (
     <header className="print-hidden sticky top-0 z-30 h-14 shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/95 backdrop-blur-md">
-      <div className="flex h-full items-center justify-between gap-2 px-4 sm:px-6">
-        {/* Left: Single Sidebar Toggle (ONLY shown when sidebar is collapsed on desktop or on mobile) + Title + Access Code */}
-        <div className="flex min-w-0 items-center gap-2.5">
+      <div className="flex h-full items-center justify-between gap-2 px-3 sm:px-6">
+        {/* Left: Sidebar Toggle (hidden on < sm since mobile bottom bar has Notes) + Title + Access Code */}
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-2.5">
           <button
             type="button"
             onClick={onToggleSidebar}
             aria-label="Open sidebar"
             title="Open sidebar"
-            className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text-primary)] ${
-              sidebarOpen ? "lg:hidden" : ""
-            }`}
+            className={`hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text-primary)] sm:inline-flex ${sidebarOpen ? "lg:hidden" : ""
+              }`}
           >
             <SidebarSimple size={18} />
           </button>
@@ -107,7 +111,7 @@ export function Header({
             </Link>
           )}
 
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             {editingTitle && canEdit ? (
               <input
                 type="text"
@@ -117,34 +121,55 @@ export function Header({
                 onKeyDown={handleTitleKeyDown}
                 placeholder="Untitled Note"
                 autoFocus
-                className="h-8 w-44 rounded-lg border border-[var(--accent-primary)] bg-[var(--bg-canvas)] px-2 text-sm font-semibold text-[var(--text-primary)] focus:outline-none sm:w-64"
+                className="h-8 min-w-0 flex-1 rounded-lg border border-[var(--accent-primary)] bg-[var(--bg-canvas)] px-2 text-base font-semibold text-[var(--text-primary)] focus:outline-none sm:w-64 sm:flex-none sm:text-sm"
               />
             ) : (
-              <button
-                type="button"
-                disabled={!canEdit}
-                onClick={() => canEdit && setEditingTitle(true)}
-                title={canEdit ? "Click to rename note" : undefined}
-                className="truncate text-left text-sm font-bold tracking-tight text-[var(--text-primary)] hover:text-[var(--accent-primary)] disabled:hover:text-[var(--text-primary)] sm:text-[15px]"
-              >
-                {room.title || "Untitled Note"}
-              </button>
-            )}
+              <div className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-2">
+                <button
+                  type="button"
+                  disabled={!canEdit}
+                  onClick={() => canEdit && setEditingTitle(true)}
+                  title={canEdit ? "Click to rename note" : undefined}
+                  className="truncate text-left text-sm font-bold leading-tight tracking-tight text-[var(--text-primary)] hover:text-[var(--accent-primary)] disabled:hover:text-[var(--text-primary)] sm:text-[15px]"
+                >
+                  {room.title || "Untitled Note"}
+                </button>
 
-            <button
-              type="button"
-              onClick={handleCopyCode}
-              title="Copy access code for another device"
-              className="hidden shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 py-1 font-mono text-[11px] font-semibold text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] sm:inline-flex"
-            >
-              <Key size={12} weight="duotone" className="text-[var(--accent-primary)]" />
-              <span>{room.displayCode}</span>
-              {copiedCode ? (
-                <Check size={11} weight="bold" className="animate-pop-in text-[var(--accent-primary)]" />
-              ) : (
-                <Copy size={11} className="opacity-70" />
-              )}
-            </button>
+                {/* Compact tappable mobile code chip under title; pill beside title on sm+ */}
+                {isDraft ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onNotify("Offline draft — gets a unique 4-char code automatically once online")
+                    }
+                    title="Saved locally; will receive a 4-character code when back online"
+                    className="mt-0.5 inline-flex w-fit shrink-0 items-center gap-1 rounded-md bg-[var(--status-burn-soft)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[var(--status-burn)] sm:mt-0 sm:rounded-lg sm:px-2 sm:py-1 sm:text-[11px]"
+                  >
+                    <CloudSlash size={12} weight="duotone" />
+                    <span>Offline Draft</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleCopyCode}
+                    title="Copy access code for another device"
+                    className="mt-0.5 inline-flex w-fit shrink-0 items-center gap-1 font-mono text-[10px] font-semibold text-[var(--text-secondary)] transition hover:text-[var(--text-primary)] sm:mt-0 sm:gap-1.5 sm:rounded-lg sm:border sm:border-[var(--border-subtle)] sm:bg-[var(--bg-canvas)] sm:px-2 sm:py-1 sm:text-[11px] sm:hover:border-[var(--border-strong)]"
+                  >
+                    {isOffline ? (
+                      <CloudSlash size={11} weight="duotone" className="text-[var(--status-burn)] sm:h-3 sm:w-3" />
+                    ) : (
+                      <Key size={11} weight="duotone" className="text-[var(--accent-primary)] sm:h-3 sm:w-3" />
+                    )}
+                    <span>{room.displayCode}</span>
+                    {copiedCode ? (
+                      <Check size={11} weight="bold" className="animate-pop-in text-[var(--accent-primary)]" />
+                    ) : (
+                      <Copy size={10} className="opacity-70 sm:h-[11px] sm:w-[11px]" />
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
 
             {room.hasPin && (
               <span
@@ -174,12 +199,17 @@ export function Header({
             <Popover>
               <PopoverTrigger
                 aria-label="Connected devices"
-                className="animate-fade-in hidden h-9 cursor-pointer items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2.5 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text-primary)] md:inline-flex"
+                className="animate-fade-in inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:bg-[var(--bg-subtle)] hover:text-[var(--text-primary)] md:px-2.5"
               >
                 <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--accent-primary)]" />
-                <span>{Math.max(1, syncingCount)} online</span>
+                <span className="font-mono text-[11px] md:hidden">
+                  {Math.max(1, syncingCount) + viewers.length}
+                </span>
+                <span className="hidden md:inline">{Math.max(1, syncingCount)} online</span>
                 {viewers.length > 0 && (
-                  <span className="text-[var(--text-muted)]">· {viewers.length} viewing</span>
+                  <span className="hidden text-[var(--text-muted)] md:inline">
+                    · {viewers.length} viewing
+                  </span>
                 )}
               </PopoverTrigger>
 
@@ -227,7 +257,7 @@ export function Header({
           <button
             type="button"
             onClick={onOpenShare}
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent-primary)] px-3 text-xs font-semibold text-white shadow-xs transition hover:bg-[var(--accent-primary-hover)] dark:text-[#0d1f1d]"
+            className="hidden h-9 items-center gap-1.5 rounded-xl bg-[var(--accent-primary)] px-3 text-xs font-semibold text-white shadow-xs transition hover:bg-[var(--accent-primary-hover)] sm:inline-flex dark:text-[#0d1f1d]"
           >
             <QrCode size={16} weight="duotone" />
             <span>Share</span>

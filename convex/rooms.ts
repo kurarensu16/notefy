@@ -362,6 +362,42 @@ export const createInstant = mutation({
   },
 });
 
+export const createFromDraft = mutation({
+  args: {
+    title: v.string(),
+    padContent: v.string(),
+  },
+  handler: async (ctx, { title, padContent }) => {
+    const { code, displayCode } = await generateUniqueFourCharCode(ctx);
+    const { code: readOnlyCode } = await generateUniqueFourCharCode(ctx, new Set([code]));
+    const now = Date.now();
+
+    const safeTitle = title.trim().slice(0, MAX_TITLE_LENGTH);
+    const safePad = padContent.slice(0, MAX_PAD_LENGTH * 2);
+    const [encTitle, encPad] = await Promise.all([
+      encryptAtRest(safeTitle),
+      encryptAtRest(safePad),
+    ]);
+
+    const id = await ctx.db.insert("rooms", {
+      code,
+      displayCode,
+      title: encTitle,
+      padContent: encPad,
+      padUpdatedAt: safePad ? now : undefined,
+      readOnlyEnabled: true,
+      readOnlyCode,
+      pinScope: "edit",
+      roomExpiryMode: "never",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const created = await ctx.db.get(id);
+    return toDecryptedPublicRoom(created!);
+  },
+});
+
 export const createOrClaim = mutation({
   args: { rawSlug: v.string() },
   handler: async (ctx, { rawSlug }) => {

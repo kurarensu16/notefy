@@ -1,4 +1,5 @@
 import type { RecentRoom, ThemeMode } from "../types";
+import { clearAllOfflineStorage } from "./offlineStore";
 
 const CLIENT_ID_KEY = "notefy:clientId";
 const RECENT_ROOMS_KEY = "notefy:recentRooms";
@@ -123,6 +124,10 @@ export function getInitialTheme(): ThemeMode {
 export function applyTheme(theme: ThemeMode): void {
   if (typeof document !== "undefined") {
     document.documentElement.classList.toggle("dark", theme === "dark");
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute("content", theme === "dark" ? "#1C1B19" : "#FAF9F5");
+    }
   }
   try {
     localStorage.setItem(THEME_KEY, theme);
@@ -144,6 +149,7 @@ export function clearBrowserSessionState(): void {
     for (const key of keysToDelete) {
       localStorage.removeItem(key);
     }
+    clearAllOfflineStorage();
     localStorage.setItem(CLIENT_ID_KEY, generateClientId());
   } catch {
     // ignore

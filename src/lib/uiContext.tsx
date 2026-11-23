@@ -15,9 +15,19 @@ import {
   setRoomSessionToken,
 } from "./clientState";
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+}
+
 interface NotefyUiValue {
   theme: ThemeMode;
   toggleTheme: () => void;
+  isOnline: boolean;
+  canInstallPwa: boolean;
+  promptInstallPwa: () => Promise<boolean>;
+  offlineVersion: number;
+  bumpOfflineVersion: () => void;
   toasts: ToastMessage[];
   pushToast: (
     text: string,
@@ -41,6 +51,11 @@ const NotefyUiContext = createContext<NotefyUiValue | null>(null);
 
 export function NotefyUiProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme());
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  );
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [offlineVersion, setOfflineVersion] = useState(0);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [recentRooms, setRecentRooms] = useState<RecentRoom[]>(() => getRecentRooms());
   const [sessionVersion, setSessionVersion] = useState(0);
@@ -49,6 +64,52 @@ export function NotefyUiProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    const onAppInstalled = () => {
+      setInstallPrompt(null);
+    };
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
+    window.addEventListener("appinstalled", onAppInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+      window.removeEventListener("appinstalled", onAppInstalled);
+    };
+  }, []);
+
+  const promptInstallPwa = useCallback(async () => {
+    if (!installPrompt) return false;
+    try {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === "accepted") {
+        setInstallPrompt(null);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, [installPrompt]);
+
+  const bumpOfflineVersion = useCallback(() => {
+    setOfflineVersion((v) => v + 1);
+  }, []);
 
   const toggleTheme = useCallback(() => {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
@@ -104,6 +165,7 @@ export function NotefyUiProvider({ children }: { children: React.ReactNode }) {
     clearBrowserSessionState();
     setRecentRooms([]);
     setSessionVersion((v) => v + 1);
+    setOfflineVersion((v) => v + 1);
   }, []);
 
   const getRoomSession = useCallback(
@@ -146,6 +208,11 @@ export function NotefyUiProvider({ children }: { children: React.ReactNode }) {
     () => ({
       theme,
       toggleTheme,
+      isOnline,
+      canInstallPwa: Boolean(installPrompt),
+      promptInstallPwa,
+      offlineVersion,
+      bumpOfflineVersion,
       toasts,
       pushToast,
       dismissToast,
@@ -164,6 +231,11 @@ export function NotefyUiProvider({ children }: { children: React.ReactNode }) {
     [
       theme,
       toggleTheme,
+      isOnline,
+      installPrompt,
+      promptInstallPwa,
+      offlineVersion,
+      bumpOfflineVersion,
       toasts,
       pushToast,
       dismissToast,

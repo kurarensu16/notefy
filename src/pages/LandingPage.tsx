@@ -5,6 +5,8 @@ import { OTPInput, OTPInputGroup, OTPInputSlot } from "@ui-sdk/react/otp-input";
 import {
   ArrowRight,
   ClockCounterClockwise,
+  CloudSlash,
+  DownloadSimple,
   LinkSimple,
   Notepad,
   PencilSimpleLine,
@@ -12,6 +14,14 @@ import {
 } from "@phosphor-icons/react";
 import { api } from "../../convex/_generated/api";
 import { getClientId } from "../lib/clientState";
+import {
+  cacheRoomSnapshot,
+  createOfflineDraft,
+  draftToRoomView,
+  getCachedRoomSnapshot,
+  getOfflineDraft,
+  isOfflineDraftCode,
+} from "../lib/offlineStore";
 import { useNotefyUi } from "../lib/uiContext";
 import { useDocumentMeta } from "../lib/useDocumentMeta";
 import { ThemeToggle } from "../components/ui/ThemeToggle";
@@ -22,12 +32,23 @@ export function LandingPage() {
   const navigate = useNavigate();
   const createInstant = useMutation(api.rooms.createInstant);
   const resolveCodeMut = useMutation(api.rooms.resolveCode);
-  const { recentRooms, touchRecentRoom, forgetRecentRoom, pushToast } = useNotefyUi();
+  const {
+    isOnline,
+    canInstallPwa,
+    promptInstallPwa,
+    recentRooms,
+    touchRecentRoom,
+    forgetRecentRoom,
+    pushToast,
+  } = useNotefyUi();
 
-  const recentCodes = useMemo(() => recentRooms.map((r) => r.code), [recentRooms]);
+  const recentCodes = useMemo(
+    () => recentRooms.map((r) => r.code).filter((c) => !isOfflineDraftCode(c)),
+    [recentRooms]
+  );
   const liveMeta = useQuery(
     api.rooms.getRecentMeta,
-    recentCodes.length > 0 ? { codes: recentCodes } : "skip"
+    isOnline && recentCodes.length > 0 ? { codes: recentCodes } : "skip"
   );
 
   const [mode, setMode] = useState<"code" | "custom">("code");
@@ -38,16 +59,29 @@ export function LandingPage() {
   const [openingCode, setOpeningCode] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
 
+  const openNewOfflineDraft = () => {
+    const draft = createOfflineDraft();
+    touchRecentRoom(draftToRoomView(draft));
+    pushToast("Created offline draft (will sync when online)");
+    navigate(`/${draft.draftId}`);
+  };
+
   const handleStartWriting = async () => {
     if (creating) return;
+    if (!isOnline) {
+      openNewOfflineDraft();
+      return;
+    }
     setCreating(true);
     try {
       const room = await createInstant({});
+      cacheRoomSnapshot(room);
       touchRecentRoom(room);
       pushToast(`Created note (${room.displayCode})`);
       navigate(`/${room.displayCode}`);
     } catch {
-      pushToast("Could not create note. Check Convex connection.", { tone: "danger" });
+      openNewOfflineDraft();
+    } finally {
       setCreating(false);
     }
   };
@@ -59,6 +93,27 @@ export function LandingPage() {
       .replace(/[?#].*$/, "")
       .replace(/^\/+|\/+$/g, "");
     if (!cleaned || openingCode) return;
+
+    if (isOfflineDraftCode(cleaned)) {
+      const draft = getOfflineDraft(cleaned);
+      if (draft) {
+        setError(null);
+        navigate(`/${draft.draftId}`);
+        return;
+      }
+    }
+
+    if (!isOnline) {
+      const cached = getCachedRoomSnapshot(cleaned);
+      if (cached) {
+        setError(null);
+        navigate(`/${cached.displayCode}`);
+        return;
+      }
+      setError("You're offline — only previously opened notes on this device can be opened.");
+      setShakeKey((k) => k + 1);
+      return;
+    }
 
     setOpeningCode(true);
     try {
@@ -84,6 +139,12 @@ export function LandingPage() {
       setError(`No note found for "${cleaned.toUpperCase()}".`);
       setShakeKey((k) => k + 1);
     } catch {
+      const cached = getCachedRoomSnapshot(cleaned);
+      if (cached) {
+        setError(null);
+        navigate(`/${cached.displayCode}`);
+        return;
+      }
       setError("Connection error while checking code.");
       setShakeKey((k) => k + 1);
     } finally {
@@ -97,7 +158,7 @@ export function LandingPage() {
   };
 
   return (
-    <div className="notefy-dot-grid relative flex min-h-screen flex-col bg-[var(--bg-canvas)] text-[var(--text-primary)]">
+    <div className="notefy-dot-grid relative flex min-h-dvh flex-col bg-[var(--bg-canvas)] text-[var(--text-primary)]">
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,transparent_30%,var(--bg-canvas)_85%)]"
@@ -112,7 +173,25 @@ export function LandingPage() {
           <span className="text-[15px] font-bold tracking-tight">Notefy</span>
         </Link>
 
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          {!isOnline && (
+            <span className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-[var(--status-burn-soft)] px-2.5 font-mono text-[11px] font-semibold text-[var(--status-burn)]">
+              <CloudSlash size={14} weight="duotone" />
+              Offline
+            </span>
+          )}
+          {canInstallPwa && (
+            <button
+              type="button"
+              onClick={() => void promptInstallPwa()}
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 text-xs font-semibold text-[var(--text-primary)] shadow-2xs transition hover:border-[var(--border-strong)] hover:bg-[var(--bg-subtle)]"
+            >
+              <DownloadSimple size={15} weight="duotone" className="text-[var(--accent-primary)]" />
+              <span>Install</span>
+            </button>
+          )}
+          <ThemeToggle />
+        </div>
       </header>
 
       {/* Centered Focused Entry */}
@@ -245,7 +324,7 @@ export function LandingPage() {
                       placeholder="custom-link"
                       autoFocus
                       aria-label="Enter custom link"
-                      className="w-full min-w-0 bg-transparent pl-0.5 font-mono text-sm text-[var(--text-primary)] placeholder:font-sans placeholder:text-[var(--text-muted)] focus:outline-none"
+                      className="w-full min-w-0 bg-transparent pl-0.5 font-mono text-base text-[var(--text-primary)] placeholder:font-sans placeholder:text-sm placeholder:text-[var(--text-muted)] focus:outline-none sm:text-sm"
                     />
                   </div>
                   <button
@@ -287,7 +366,8 @@ export function LandingPage() {
                 </div>
                 <div className="space-y-1">
                   {recentRooms.slice(0, 4).map((r) => {
-                    const live = liveMeta?.[r.code];
+                    const isDraft = isOfflineDraftCode(r.code);
+                    const live = isDraft ? undefined : liveMeta?.[r.code];
                     const title = live?.title || r.title || "Untitled Note";
                     const displayCode = live?.displayCode || r.displayCode;
                     return (
@@ -299,12 +379,22 @@ export function LandingPage() {
                           to={`/${displayCode}`}
                           className="flex min-w-0 flex-1 items-center gap-2 text-xs"
                         >
-                          <Notepad size={14} weight="duotone" className="shrink-0 text-[var(--accent-primary)]" />
+                          {isDraft ? (
+                            <CloudSlash size={14} weight="duotone" className="shrink-0 text-[var(--status-burn)]" />
+                          ) : (
+                            <Notepad size={14} weight="duotone" className="shrink-0 text-[var(--accent-primary)]" />
+                          )}
                           <span className="truncate font-medium text-[var(--text-primary)]">
                             {title}
                           </span>
-                          <span className="shrink-0 rounded-md bg-[var(--bg-subtle)] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[var(--text-secondary)]">
-                            {displayCode}
+                          <span
+                            className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                              isDraft
+                                ? "bg-[var(--status-burn-soft)] text-[var(--status-burn)]"
+                                : "bg-[var(--bg-subtle)] text-[var(--text-secondary)]"
+                            }`}
+                          >
+                            {isDraft ? "Offline" : displayCode}
                           </span>
                         </Link>
                         <button

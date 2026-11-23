@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "convex/react";
 import {
@@ -12,6 +12,7 @@ import {
 import { OTPInput, OTPInputGroup, OTPInputSlot } from "@ui-sdk/react/otp-input";
 import {
   ArrowRight,
+  CloudSlash,
   Copy,
   CopySimple,
   DotsThree,
@@ -37,6 +38,18 @@ import type { Id } from "../../convex/_generated/dataModel";
 import type { NotefyRoom } from "../types";
 import { getClientId } from "../lib/clientState";
 import { decryptClientE2ee, encryptClientE2ee, isE2eePayload } from "../lib/e2ee";
+import {
+  cacheRoomSnapshot,
+  createOfflineDraft,
+  deleteOfflineDraft,
+  draftToRoomView,
+  getCachedRoomSnapshot,
+  getOfflineDraft,
+  isOfflineDraftCode,
+  queuePendingRoomEdit,
+  removeCachedRoomSnapshot,
+  updateOfflineDraft,
+} from "../lib/offlineStore";
 import { useNotefyUi } from "../lib/uiContext";
 import { copyTextToClipboard } from "../lib/device";
 import { formatRelativeTime } from "../lib/parsers";
@@ -70,6 +83,8 @@ export function Sidebar({
   const restoreRoomMut = useMutation(api.rooms.restoreRoom);
 
   const {
+    isOnline,
+    bumpOfflineVersion,
     recentRooms,
     touchRecentRoom,
     forgetRecentRoom,
@@ -78,10 +93,13 @@ export function Sidebar({
     pushToast,
   } = useNotefyUi();
 
-  const recentCodes = useMemo(() => recentRooms.map((r) => r.code), [recentRooms]);
+  const recentCodes = useMemo(
+    () => recentRooms.map((r) => r.code).filter((c) => !isOfflineDraftCode(c)),
+    [recentRooms]
+  );
   const liveMeta = useQuery(
     api.rooms.getRecentMeta,
-    recentCodes.length > 0 ? { codes: recentCodes } : "skip"
+    isOnline && recentCodes.length > 0 ? { codes: recentCodes } : "skip"
   );
 
   const [accessMode, setAccessMode] = useState<"code" | "custom">("code");
@@ -96,6 +114,16 @@ export function Sidebar({
   const [renameDraft, setRenameDraft] = useState("");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
 
+  // Lock background page scroll while mobile drawer is open
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mobileOpen]);
+
   const sortedRooms = useMemo(() => {
     const list = [...recentRooms];
     list.sort((a, b) => {
@@ -106,17 +134,31 @@ export function Sidebar({
     return list;
   }, [recentRooms, liveMeta, sortOrder]);
 
+  const openOfflineDraft = (initialTitle = "", initialPad = "") => {
+    const draft = createOfflineDraft(initialTitle, initialPad);
+    touchRecentRoom(draftToRoomView(draft));
+    bumpOfflineVersion();
+    pushToast("Created offline draft (will sync when online)");
+    onCloseMobile();
+    navigate(`/${draft.draftId}`);
+  };
+
   const handleNewNote = async () => {
     if (creating) return;
+    if (!isOnline) {
+      openOfflineDraft();
+      return;
+    }
     setCreating(true);
     try {
       const created = await createInstant({});
+      cacheRoomSnapshot(created);
       touchRecentRoom(created);
       pushToast(`Created note (${created.displayCode})`);
       onCloseMobile();
       navigate(`/${created.displayCode}`);
     } catch {
-      pushToast("Could not create note", { tone: "danger" });
+      openOfflineDraft();
     } finally {
       setCreating(false);
     }
@@ -129,6 +171,33 @@ export function Sidebar({
       .replace(/[?#].*$/, "")
       .replace(/^\/+|\/+$/g, "");
     if (!cleaned || checkingCode) return;
+
+    if (isOfflineDraftCode(cleaned)) {
+      const draft = getOfflineDraft(cleaned);
+      if (draft) {
+        setOtpCode("");
+        setCodeInput("");
+        setCodeError(null);
+        onCloseMobile();
+        navigate(`/${draft.draftId}`);
+        return;
+      }
+    }
+
+    if (!isOnline) {
+      const cached = getCachedRoomSnapshot(cleaned);
+      if (cached) {
+        setOtpCode("");
+        setCodeInput("");
+        setCodeError(null);
+        onCloseMobile();
+        navigate(`/${cached.displayCode}`);
+        return;
+      }
+      setCodeError("Offline — note isn't cached on this device.");
+      setCodeShakeKey((k) => k + 1);
+      return;
+    }
 
     setCheckingCode(true);
     try {
@@ -161,6 +230,15 @@ export function Sidebar({
       setCodeError(`No note found for "${cleaned.toUpperCase()}".`);
       setCodeShakeKey((k) => k + 1);
     } catch {
+      const cached = getCachedRoomSnapshot(cleaned);
+      if (cached) {
+        setOtpCode("");
+        setCodeInput("");
+        setCodeError(null);
+        onCloseMobile();
+        navigate(`/${cached.displayCode}`);
+        return;
+      }
       setCodeError("Connection error while checking code.");
       setCodeShakeKey((k) => k + 1);
     } finally {
@@ -173,9 +251,33 @@ export function Sidebar({
     void resolveAndOpen(codeInput);
   };
 
-  const commitInlineRename = async (roomId?: Id<"rooms">) => {
+  const commitInlineRename = async (entryCode: string, roomId?: Id<"rooms">) => {
     setRenamingCode(null);
+    if (isOfflineDraftCode(entryCode)) {
+      const updated = updateOfflineDraft(entryCode, { title: renameDraft.trim() });
+      if (updated) {
+        touchRecentRoom(draftToRoomView(updated));
+        bumpOfflineVersion();
+        pushToast("Draft renamed");
+      }
+      return;
+    }
     if (!roomId) return;
+    if (!isOnline) {
+      const cached = getCachedRoomSnapshot(entryCode);
+      const e2eeKey = getRoomE2ee(roomId);
+      const nextTitle = e2eeKey
+        ? await encryptClientE2ee(renameDraft.trim(), e2eeKey)
+        : renameDraft.trim();
+      if (cached) {
+        cacheRoomSnapshot({ ...cached, title: nextTitle, updatedAt: Date.now() });
+        queuePendingRoomEdit(cached, { title: nextTitle });
+        touchRecentRoom({ code: cached.code, displayCode: cached.displayCode, title: renameDraft.trim() });
+        bumpOfflineVersion();
+        pushToast("Renamed locally (will sync when online)");
+      }
+      return;
+    }
     try {
       const e2eeKey = getRoomE2ee(roomId);
       const nextTitle = e2eeKey
@@ -231,6 +333,21 @@ export function Sidebar({
     }
 
     if (action === "duplicate") {
+      if (isOfflineDraftCode(entry.code)) {
+        const src = getOfflineDraft(entry.code);
+        if (src) {
+          openOfflineDraft(src.title ? `${src.title} (Copy)` : "Untitled Note (Copy)", src.padContent);
+        }
+        return;
+      }
+      if (!isOnline) {
+        const srcTitle = isActive ? currentRoom.title : entry.title;
+        const srcPad = isActive
+          ? currentRoom.padContent
+          : getCachedRoomSnapshot(entry.code)?.padContent ?? "";
+        openOfflineDraft(srcTitle ? `${srcTitle} (Copy)` : "Untitled Note (Copy)", srcPad);
+        return;
+      }
       if (!targetRoomId) return;
       try {
         const cloned = await duplicateMut({
@@ -243,6 +360,7 @@ export function Sidebar({
               }
             : {}),
         });
+        cacheRoomSnapshot(cloned);
         touchRecentRoom(cloned);
         pushToast(`Duplicated as ${cloned.displayCode}`);
         onCloseMobile();
@@ -275,6 +393,21 @@ export function Sidebar({
     }
 
     if (action === "delete") {
+      if (isOfflineDraftCode(entry.code)) {
+        deleteOfflineDraft(entry.code);
+        forgetRecentRoom(entry.code);
+        bumpOfflineVersion();
+        pushToast("Deleted offline draft", { tone: "danger" });
+        if (isActive) {
+          onCloseMobile();
+          navigateAwayFrom(entry.code);
+        }
+        return;
+      }
+      if (!isOnline) {
+        pushToast("Connect online to delete a synced note permanently", { tone: "danger" });
+        return;
+      }
       if (!targetRoomId) {
         forgetRecentRoom(entry.code);
         return;
@@ -285,6 +418,7 @@ export function Sidebar({
           roomId: targetRoomId,
           sessionToken: getRoomSession(targetRoomId),
         });
+        removeCachedRoomSnapshot(entry.code);
         forgetRecentRoom(entry.code);
         if (!snapshot) return;
 
@@ -503,7 +637,7 @@ export function Sidebar({
                   }}
                   placeholder="custom-link or URL"
                   aria-label="Enter custom link or URL to open a note"
-                  className="min-w-0 flex-1 bg-transparent font-mono text-xs text-[var(--text-primary)] placeholder:font-sans placeholder:text-[var(--text-muted)] focus:outline-none"
+                  className="min-w-0 flex-1 bg-transparent font-mono text-base text-[var(--text-primary)] placeholder:font-sans placeholder:text-sm placeholder:text-[var(--text-muted)] focus:outline-none sm:text-xs sm:placeholder:text-xs"
                 />
                 {codeInput.length > 0 && !checkingCode && (
                   <button
@@ -594,14 +728,20 @@ export function Sidebar({
           className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain px-2.5 pb-2.5"
         >
           {sortedRooms.map((entry) => {
+            const isDraft = isOfflineDraftCode(entry.code);
             const active = entry.code === currentRoom.code;
-            const live = liveMeta?.[entry.code];
+            const live = isDraft ? undefined : liveMeta?.[entry.code];
             const isRenaming = renamingCode === entry.code;
             const displayCode = live?.displayCode || entry.displayCode;
             const title = (active ? currentRoom.title : live?.title) || entry.title || "Untitled Note";
             const hasPin = active ? currentRoom.hasPin : Boolean(live?.hasPin);
             const expiresAt = active ? currentRoom.expiresAt : (live?.expiresAt ?? null);
-            const targetId = (live?.id ?? (active ? (currentRoom.id as Id<"rooms">) : undefined));
+            const targetId = isDraft
+              ? undefined
+              : (live?.id ??
+                (active
+                  ? (currentRoom.id as Id<"rooms">)
+                  : (getCachedRoomSnapshot(entry.code)?.id as Id<"rooms"> | undefined)));
 
             return (
               <div
@@ -616,7 +756,7 @@ export function Sidebar({
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
-                      void commitInlineRename(targetId);
+                      void commitInlineRename(entry.code, targetId);
                     }}
                     className="flex min-w-0 flex-1 items-center px-2 py-1.5"
                   >
@@ -624,30 +764,35 @@ export function Sidebar({
                       type="text"
                       value={renameDraft}
                       onChange={(e) => setRenameDraft(e.target.value)}
-                      onBlur={() => void commitInlineRename(targetId)}
+                      onBlur={() => void commitInlineRename(entry.code, targetId)}
                       onKeyDown={(e) => {
                         if (e.key === "Escape") setRenamingCode(null);
                       }}
                       placeholder="Note title…"
                       autoFocus
-                      className="h-7 w-full rounded-lg border border-[var(--accent-primary)] bg-[var(--bg-surface)] px-2 text-xs font-semibold text-[var(--text-primary)] focus:outline-none"
+                      className="h-8 w-full rounded-lg border border-[var(--accent-primary)] bg-[var(--bg-surface)] px-2 text-base font-semibold text-[var(--text-primary)] focus:outline-none sm:h-7 sm:text-xs"
                     />
                   </form>
                 ) : (
                   <Link
                     to={`/${displayCode}`}
                     onClick={onCloseMobile}
-                    className="min-w-0 flex-1 py-2 pr-1 pl-2.5"
+                    className="min-w-0 flex-1 py-2.5 pr-1 pl-2.5 sm:py-2"
                   >
                     <div className="flex items-center gap-1.5">
                       <span className="truncate text-xs font-semibold">{title}</span>
+                      {isDraft && (
+                        <CloudSlash size={12} weight="duotone" className="shrink-0 text-[var(--status-burn)]" />
+                      )}
                       {hasPin && <LockKey size={12} weight="duotone" className="shrink-0 opacity-80" />}
                       {expiresAt && (
                         <Timer size={12} weight="duotone" className="shrink-0 text-[var(--status-burn)]" />
                       )}
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] opacity-70">
-                      <span className="truncate">{displayCode}</span>
+                      <span className={`truncate ${isDraft ? "text-[var(--status-burn)]" : ""}`}>
+                        {isDraft ? "Offline draft" : displayCode}
+                      </span>
                       <span>·</span>
                       <span className="shrink-0">
                         {formatRelativeTime(live?.updatedAt ?? entry.visitedAt)}
@@ -665,7 +810,7 @@ export function Sidebar({
                     >
                       <MenuTrigger
                         aria-label={`Actions for ${title}`}
-                        className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent p-0 transition hover:bg-[var(--bg-surface)]/80 hover:text-[var(--text-primary)] ${
+                        className={`inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent p-0 transition hover:bg-[var(--bg-surface)]/80 hover:text-[var(--text-primary)] sm:h-7 sm:w-7 ${
                           active
                             ? "text-[var(--accent-soft-text)] opacity-90"
                             : "text-[var(--text-muted)] opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 sm:data-open:opacity-100"
@@ -675,14 +820,14 @@ export function Sidebar({
                       </MenuTrigger>
 
                       <MenuContent
-                        side="right"
-                        align="start"
+                        side={mobileOpen ? "bottom" : "right"}
+                        align={mobileOpen ? "end" : "start"}
                         sideOffset={6}
                         className="min-w-48 origin-(--transform-origin) rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-1.5 text-sm shadow-xl shadow-black/15 transition-[opacity,scale] duration-150 data-starting-style:scale-96 data-starting-style:opacity-0 data-ending-style:scale-96 data-ending-style:opacity-0 dark:shadow-black/50"
                       >
                         <MenuItem
                           value="rename"
-                          disabled={!targetId}
+                          disabled={!targetId && !isDraft}
                           className="flex cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium text-[var(--text-primary)] outline-none data-highlighted:bg-[var(--bg-subtle)] data-disabled:opacity-40"
                         >
                           <MenuItemIcon>
@@ -755,8 +900,8 @@ export function Sidebar({
         </nav>
       </div>
 
-      {/* Footer: Leave & Clear Browser */}
-      <div className="shrink-0 border-t border-[var(--border-subtle)] p-3">
+      {/* Footer: Leave & Clear Browser (safe-area aware on mobile) */}
+      <div className="shrink-0 border-t border-[var(--border-subtle)] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-3">
         <button
           type="button"
           onClick={() => {
@@ -791,7 +936,7 @@ export function Sidebar({
             className="animate-fade-in fixed inset-0 bg-black/45 backdrop-blur-[2px]"
             aria-hidden="true"
           />
-          <aside className="animate-drawer-in relative z-10 h-dvh w-72 max-w-[85vw] overflow-hidden border-r border-[var(--border-subtle)] shadow-2xl">
+          <aside className="animate-drawer-in relative z-10 h-full w-72 max-w-[85vw] overflow-hidden border-r border-[var(--border-subtle)] bg-[var(--bg-canvas)] pt-[env(safe-area-inset-top)] shadow-2xl">
             {sidebarContent}
           </aside>
         </div>

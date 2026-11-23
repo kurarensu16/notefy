@@ -38,7 +38,7 @@ export function PinGate({ roomLabel, subtitle, onUnlock }: PinGateProps) {
   };
 
   return (
-    <div className="notefy-dot-grid flex min-h-screen flex-col items-center justify-center bg-[var(--bg-canvas)] px-4 py-12">
+    <div className="notefy-dot-grid flex min-h-dvh flex-col items-center justify-center bg-[var(--bg-canvas)] px-4 py-12">
       <div
         key={shakeKey}
         className={`w-full max-w-sm rounded-3xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-7 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_14px_34px_-14px_rgba(24,23,21,0.12)] ${
@@ -73,7 +73,7 @@ export function PinGate({ roomLabel, subtitle, onUnlock }: PinGateProps) {
               }}
               placeholder="Enter PIN or passphrase"
               autoFocus
-              className="h-11 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-canvas)] pr-10 pl-3.5 font-mono text-sm text-[var(--text-primary)] placeholder:font-sans placeholder:text-[var(--text-muted)] transition focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] focus:outline-none"
+              className="h-11 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-canvas)] pr-10 pl-3.5 font-mono text-base text-[var(--text-primary)] placeholder:font-sans placeholder:text-sm placeholder:text-[var(--text-muted)] transition focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] focus:outline-none sm:text-sm"
             />
             <button
               type="button"

@@ -203,7 +203,7 @@ export function ReadOnlyPage() {
 
   if (state.status === "not_found" || state.status === "disabled") {
     return (
-      <div className="notefy-dot-grid flex min-h-screen flex-col items-center justify-center bg-[var(--bg-canvas)] px-4">
+      <div className="notefy-dot-grid flex min-h-dvh flex-col items-center justify-center bg-[var(--bg-canvas)] px-4">
         <div className="animate-fade-up w-full max-w-md rounded-3xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-7 text-center shadow-sm">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--bg-subtle)] text-[var(--text-muted)]">
             <Eye size={26} weight="duotone" />
@@ -305,10 +305,10 @@ export function ReadOnlyPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[var(--bg-surface)] text-[var(--text-primary)]">
+    <div className="flex min-h-dvh flex-col bg-[var(--bg-surface)] text-[var(--text-primary)]">
       <header className="print-hidden sticky top-0 z-30 h-14 shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/95 backdrop-blur-md">
-        <div className="flex h-full items-center justify-between gap-2 px-4 sm:px-8">
-          <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex h-full items-center justify-between gap-2 px-3 sm:px-8">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
             <Link
               to="/"
               aria-label="Notefy Home"
@@ -316,13 +316,13 @@ export function ReadOnlyPage() {
             >
               <Notepad size={18} weight="duotone" />
             </Link>
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
               <h1 className="truncate text-sm font-bold tracking-tight sm:text-[15px]">
                 {room.title || "Shared Note"}
               </h1>
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[11px] font-medium text-[var(--accent-soft-text)]">
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-soft-text)] sm:text-[11px]">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--accent-primary)]" />
-                Read-Only · Live
+                <span className="hidden sm:inline">Read-Only · </span>Live
               </span>
               {viewerCount > 1 && (
                 <span className="hidden shrink-0 font-mono text-[11px] text-[var(--text-muted)] sm:inline">

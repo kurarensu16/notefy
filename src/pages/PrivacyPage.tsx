@@ -6,7 +6,7 @@ import { useDocumentMeta } from "../lib/useDocumentMeta";
 export function PrivacyPage() {
   useDocumentMeta("Privacy Policy — Notefy");
   return (
-    <div className="min-h-screen bg-[var(--bg-canvas)] text-[var(--text-primary)]">
+    <div className="min-h-dvh bg-[var(--bg-canvas)] text-[var(--text-primary)]">
       <header className="mx-auto flex max-w-3xl items-center justify-between px-5 py-5 sm:px-8">
         <Link to="/" className="inline-flex items-center gap-2.5 transition hover:opacity-85">
           <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-primary)] text-white shadow-xs dark:text-[#0d1f1d]">

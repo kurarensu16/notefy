@@ -16,6 +16,7 @@ import {
   ArrowSquareOut,
   Check,
   CheckCircle,
+  CloudSlash,
   Copy,
   Eye,
   EyeSlash,
@@ -38,6 +39,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import type { NotefyRoom, PinScope, RoomExpiryMode } from "../types";
 import { copyTextToClipboard, getPublicOrigin } from "../lib/device";
 import { deriveRoomE2eeKeyB64, encryptClientE2ee } from "../lib/e2ee";
+import { isOfflineDraftCode } from "../lib/offlineStore";
 import { useNotefyUi } from "../lib/uiContext";
 import { formatCountdown } from "../lib/parsers";
 import { QrCodeBox } from "./QrCodeBox";
@@ -64,7 +66,7 @@ export function SharePairModal({
   room,
   open,
   onOpenChange,
-  canEdit,
+  canEdit: canEditProp,
   onRequestLeaveClear,
 }: SharePairModalProps) {
   const navigate = useNavigate();
@@ -78,6 +80,7 @@ export function SharePairModal({
   const removePinAction = useAction(api.security.removePin);
 
   const {
+    isOnline,
     pushToast,
     getRoomSession,
     saveRoomSession,
@@ -88,6 +91,8 @@ export function SharePairModal({
     touchRecentRoom,
   } = useNotefyUi();
 
+  const isDraft = isOfflineDraftCode(room.code);
+  const canEdit = canEditProp && isOnline && !isDraft;
   const roomId = room.id as Id<"rooms">;
   const sessionToken = getRoomSession(room.id);
 
@@ -136,7 +141,7 @@ export function SharePairModal({
   const debouncedEditSlug = useDebouncedValue(slugInput, 220);
   const editAvail = useQuery(
     api.rooms.checkCodeAvailability,
-    open && editCustomOpen && debouncedEditSlug.trim()
+    open && editCustomOpen && !isDraft && isOnline && debouncedEditSlug.trim()
       ? { rawSlug: debouncedEditSlug, excludeRoomId: roomId, mode: "edit" }
       : "skip"
   );
@@ -144,7 +149,7 @@ export function SharePairModal({
   const debouncedViewSlug = useDebouncedValue(viewSlugInput, 220);
   const viewAvail = useQuery(
     api.rooms.checkCodeAvailability,
-    open && viewCustomOpen && debouncedViewSlug.trim()
+    open && viewCustomOpen && !isDraft && isOnline && debouncedViewSlug.trim()
       ? { rawSlug: debouncedViewSlug, excludeRoomId: roomId, mode: "readonly" }
       : "skip"
   );
@@ -411,9 +416,14 @@ export function SharePairModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogBackdrop className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[2px] transition-opacity duration-200 data-starting-style:opacity-0 data-ending-style:opacity-0" />
-      <DialogContent className="fixed top-1/2 left-1/2 z-50 m-0 flex max-h-[90vh] w-[min(94vw,35rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-3xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-0 text-[var(--text-primary)] shadow-2xl transition-all duration-200 data-starting-style:scale-96 data-starting-style:opacity-0 data-ending-style:scale-96 data-ending-style:opacity-0">
+      <DialogContent className="fixed inset-x-0 bottom-0 top-auto left-0 z-50 m-0 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl rounded-b-none border-t border-[var(--border-subtle)] bg-[var(--bg-surface)] p-0 text-[var(--text-primary)] shadow-2xl transition-all duration-200 data-starting-style:translate-y-6 data-starting-style:opacity-0 data-ending-style:translate-y-6 data-ending-style:opacity-0 sm:inset-x-auto sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:max-h-[90vh] sm:w-[min(94vw,35rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl sm:border sm:data-starting-style:translate-y-0 sm:data-starting-style:scale-96 sm:data-ending-style:translate-y-0 sm:data-ending-style:scale-96">
+        {/* Mobile bottom-sheet grabber pill */}
+        <div className="flex justify-center pt-2.5 pb-0.5 sm:hidden" aria-hidden="true">
+          <span className="h-1 w-10 rounded-full bg-[var(--border-strong)]/80" />
+        </div>
+
         {/* Modal Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] px-6 pt-5 pb-4">
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] px-5 pt-3.5 pb-3.5 sm:px-6 sm:pt-5 sm:pb-4">
           <div>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold tracking-tight">
               <QrCode size={20} weight="duotone" className="text-[var(--accent-primary)]" />
@@ -431,15 +441,51 @@ export function SharePairModal({
           </DialogClose>
         </div>
 
-        {/* Tabs */}
+        {/* Offline Draft View or Full Share Tabs */}
+        {isDraft ? (
+          <div className="px-5 pt-5 pb-[max(1.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-6">
+            <div className="rounded-2xl border border-[var(--status-burn)]/30 bg-[var(--status-burn-soft)]/50 p-5 text-center">
+              <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--bg-surface)] text-[var(--status-burn)] shadow-2xs">
+                <CloudSlash size={22} weight="duotone" />
+              </div>
+              <div className="text-sm font-bold text-[var(--text-primary)]">
+                Saved as an offline draft
+              </div>
+              <p className="mt-1.5 text-xs leading-relaxed text-[var(--text-secondary)]">
+                You&rsquo;re currently offline, so this note doesn&rsquo;t have a 4-character access
+                code yet. Keep writing — the moment you reconnect, Notefy will automatically assign
+                a unique code and unlock QR sharing.
+              </p>
+            </div>
+            <div className="mt-4 border-t border-[var(--border-subtle)] pt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenChange(false);
+                  onRequestLeaveClear();
+                }}
+                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-[var(--status-danger)]/40 bg-[var(--status-danger-soft)]/50 px-4 text-xs font-semibold text-[var(--status-danger)] transition hover:bg-[var(--status-danger-soft)]"
+              >
+                <SignOut size={16} weight="bold" />
+                Leave &amp; Clear This Browser
+              </button>
+            </div>
+          </div>
+        ) : (
         <Tabs
           value={tab}
           onValueChange={(next) => next && setTab(next)}
           className="flex min-h-0 flex-1 flex-col"
         >
+          {!isOnline && (
+            <div className="flex items-center gap-2 border-b border-[var(--status-burn)]/25 bg-[var(--status-burn-soft)]/60 px-5 py-2 text-[11px] font-medium text-[var(--status-burn)] sm:px-6">
+              <CloudSlash size={14} weight="duotone" className="shrink-0" />
+              <span>You&rsquo;re offline — you can copy links, but changing codes or security requires internet.</span>
+            </div>
+          )}
           <TabsList
             aria-label="Share options"
-            className="grid grid-cols-3 gap-1 border-b border-[var(--border-subtle)] bg-[var(--bg-subtle)]/50 p-1.5 px-6"
+            className="grid grid-cols-3 gap-1 border-b border-[var(--border-subtle)] bg-[var(--bg-subtle)]/50 p-1.5 px-4 sm:px-6"
           >
             <TabsTab
               value="sync"
@@ -464,7 +510,7 @@ export function SharePairModal({
             </TabsTab>
           </TabsList>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-5">
             {/* TAB 1: COMPACT EDIT & SYNC */}
             <TabsPanel value="sync" className="animate-fade-in space-y-4 outline-none">
               <div className="flex flex-col items-center gap-5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-canvas)]/70 p-4 sm:flex-row sm:items-stretch">
@@ -592,7 +638,7 @@ export function SharePairModal({
                             if (slugError) setSlugError(null);
                           }}
                           placeholder="my-custom-link"
-                          className="w-full bg-transparent pl-0.5 font-mono text-xs text-[var(--text-primary)] focus:outline-none"
+                          className="w-full bg-transparent pl-0.5 font-mono text-base text-[var(--text-primary)] focus:outline-none sm:text-xs"
                         />
                       </div>
                       <button
@@ -807,7 +853,7 @@ export function SharePairModal({
                                 if (viewSlugError) setViewSlugError(null);
                               }}
                               placeholder="workshop-notes"
-                              className="w-full bg-transparent pl-0.5 font-mono text-xs text-[var(--text-primary)] focus:outline-none"
+                              className="w-full bg-transparent pl-0.5 font-mono text-base text-[var(--text-primary)] focus:outline-none sm:text-xs"
                             />
                           </div>
                           <button
@@ -1006,7 +1052,7 @@ export function SharePairModal({
                                 ? "Enter new PIN or passphrase"
                                 : "Enter PIN or passphrase (4+ chars)"
                             }
-                            className="w-full min-w-0 bg-transparent font-mono text-xs text-[var(--text-primary)] placeholder:font-sans placeholder:text-[var(--text-muted)] focus:outline-none"
+                            className="w-full min-w-0 bg-transparent font-mono text-base text-[var(--text-primary)] placeholder:font-sans placeholder:text-sm placeholder:text-[var(--text-muted)] focus:outline-none sm:text-xs sm:placeholder:text-xs"
                           />
                           <button
                             type="button"
@@ -1136,6 +1182,7 @@ export function SharePairModal({
             </TabsPanel>
           </div>
         </Tabs>
+        )}
       </DialogContent>
     </Dialog>
   );
